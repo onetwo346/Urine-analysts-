@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Urine Analysts</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        .gradient-bg {
+            background: linear-gradient(135deg, #e0f7fa, #bbdefb);
+        }
+        .card-shadow {
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+        }
+    </style>
+</head>
+<body class="gradient-bg min-h-screen flex flex-col items-center justify-center p-4">
+    <!-- Welcome Screen -->
+    <div id="welcomeScreen" class="text-center max-w-md w-full">
+        <h1 class="text-4xl font-bold text-gray-800 mb-4">Urine Analysts</h1>
+        <p class="text-lg text-gray-600 mb-6">Health insights through real-time color analysis</p>
+        <button onclick="showInstructions()" class="bg-blue-500 text-white py-3 px-6 rounded-lg hover:bg-blue-600 transition card-shadow">Get Started</button>
+    </div>
+
+    <!-- Instructions Screen -->
+    <div id="instructionsScreen" class="hidden text-center max-w-md w-full">
+        <h2 class="text-2xl font-semibold text-gray-800 mb-4">How to Use</h2>
+        <p class="text-gray-600 mb-6">Ensure good lighting and place the sample in a clean, white container for accurate results.</p>
+        <ul class="text-left text-gray-600 mb-6">
+            <li>✅ Use bright, even lighting</li>
+            <li>✅ Avoid shadows or colored containers</li>
+            <li>✅ Hold camera steady</li>
+        </ul>
+        <button onclick="showCamera()" class="bg-blue-500 text-white py-3 px-6 rounded-lg hover:bg-blue-600 transition card-shadow">Proceed to Camera</button>
+    </div>
+
+    <!-- Camera Access Screen -->
+    <div id="cameraScreen" class="hidden flex flex-col items-center max-w-md w-full">
+        <h2 class="text-2xl font-semibold text-gray-800 mb-4">Capture Sample</h2>
+        <p class="text-gray-600 mb-4">Allow camera access to analyze the sample.</p>
+        <video id="video" class="w-full rounded-lg mb-4 card-shadow" autoplay></video>
+        <canvas id="canvas" class="hidden"></canvas>
+        <button onclick="captureImage()" class="bg-blue-500 text-white py-3 px-6 rounded-lg hover:bg-blue-600 transition card-shadow">Capture & Analyze</button>
+    </div>
+
+    <!-- Results Screen -->
+    <div id="resultsScreen" class="hidden text-center max-w-md w-full">
+        <h2 class="text-2xl font-semibold text-gray-800 mb-4">Analysis Results</h2>
+        <div id="colorDisplay" class="w-24 h-24 mx-auto rounded-full mb-4 card-shadow"></div>
+        <p id="colorName" class="text-xl font-medium text-gray-800 mb-2"></p>
+        <p id="interpretation" class="text-gray-600 mb-4"></p>
+        <p id="advice" class="text-gray-600 mb-6"></p>
+        <button onclick="resetApp()" class="bg-blue-500 text-white py-3 px-6 rounded-lg hover:bg-blue-600 transition card-shadow">Try Again</button>
+    </div>
+
+    <!-- Disclaimer -->
+    <p class="text-sm text-gray-500 mt-6 text-center max-w-md">This is not a medical device. Consult a healthcare provider for accurate diagnosis.</p>
+
+    <script>
+        // Color interpretation logic
+        const colorMap = [
+            { name: "Clear", rgb: [240, 240, 240], interpretation: "Overhydration", advice: "Excess water intake. Reduce fluid intake slightly." },
+            { name: "Pale Yellow", rgb: [255, 245, 157], interpretation: "Normal / Healthy", advice: "Good hydration. Keep it up!" },
+            { name: "Dark Yellow", rgb: [255, 204, 0], interpretation: "Mild dehydration", advice: "Drink more water throughout the day." },
+            { name: "Amber / Honey", rgb: [245, 166, 35], interpretation: "Dehydration", advice: "Increase water intake immediately." },
+            { name: "Brown", rgb: [139, 69, 19], interpretation: "Severe dehydration or liver issue", advice: "See a doctor if this persists." },
+            { name: "Pink / Red", rgb: [255, 105, 97], interpretation: "Possible blood, food, or medications", advice: "Consult a doctor to rule out UTIs or kidney issues." },
+            { name: "Blue / Green", rgb: [0, 128, 128], interpretation: "Rare, possible meds or infection", advice: "Seek medical advice for possible infections or dyes." },
+            { name: "Cloudy", rgb: [200, 200, 200], interpretation: "Infection or crystals", advice: "Consult a doctor for possible UTIs or kidney stones." }
+        ];
+
+        // Navigation between screens
+        function showInstructions() {
+            document.getElementById('welcomeScreen').classList.add('hidden');
+            document.getElementById('instructionsScreen').classList.remove('hidden');
+        }
+
+        function showCamera() {
+            document.getElementById('instructionsScreen').classList.add('hidden');
+            document.getElementById('cameraScreen').classList.remove('hidden');
+            startCamera();
+        }
+
+        function showResults() {
+            document.getElementById('cameraScreen').classList.add('hidden');
+            document.getElementById('resultsScreen').classList.remove('hidden');
+        }
+
+        function resetApp() {
+            document.getElementById('resultsScreen').classList.add('hidden');
+            document.getElementById('welcomeScreen').classList.remove('hidden');
+            stopCamera();
+        }
+
+        // Camera handling
+        let stream = null;
+        async function startCamera() {
+            try {
+                stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+                const video = document.getElementById('video');
+                video.srcObject = stream;
+            } catch (err) {
+                alert("Camera access denied. Please allow camera access to proceed.");
+            }
+        }
+
+        function stopCamera() {
+            if (stream) {
+                stream.getTracks().forEach(track => track.stop());
+                stream = null;
+            }
+        }
+
+        // Image capture and color analysis
+        function captureImage() {
+            const video = document.getElementById('video');
+            const canvas = document.getElementById('canvas');
+            const context = canvas.getContext('2d');
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            context.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+            // Get average color
+            const imageData = context.getImageData(0, 0, canvas.width, canvas.height).data;
+            let r = 0, g = 0, b = 0, count = 0;
+            for (let i = 0; i < imageData.length; i += 4) {
+                r += imageData[i];
+                g += imageData[i + 1];
+                b += imageData[i + 2];
+                count++;
+            }
+            r = Math.round(r / count);
+            g = Math.round(g / count);
+            b = Math.round(b / count);
+
+            // Find closest color
+            let closestColor = colorMap[0];
+            let minDistance = Number.MAX_VALUE;
+            colorMap.forEach(color => {
+                const distance = Math.sqrt(
+                    Math.pow(r - color.rgb[0], 2) +
+                    Math.pow(g - color.rgb[1], 2) +
+                    Math.pow(b - color.rgb[2], 2)
+                );
+                if (distance < minDistance) {
+                    minDistance = distance;
+                    closestColor = color;
+                }
+            });
+
+            // Display results
+            document.getElementById('colorDisplay').style.backgroundColor = `rgb(${r}, ${g}, ${b})`;
+            document.getElementById('colorName').textContent = closestColor.name;
+            document.getElementById('interpretation').textContent = `Interpretation: ${closestColor.interpretation}`;
+            document.getElementById('advice').textContent = `Advice: ${closestColor.advice}`;
+            showResults();
+        }
+    </script>
+</body>
+</html>
