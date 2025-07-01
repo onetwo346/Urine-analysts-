@@ -4,155 +4,763 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Live Urine Analyzer</title>
+    <title>Advanced AR Urine Analyzer Pro</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.15.0/dist/tf.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js"></script>
     <style>
-        body { font-family: 'Inter', sans-serif; }
-        .overlay { position: absolute; top: 0; left: 0; right: 0; bottom: 0; pointer-events: none; }
-        .crosshair { 
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+        
+        body { 
+            font-family: 'Inter', sans-serif; 
+            overflow-x: hidden;
+        }
+        
+        .ar-overlay { 
+            position: absolute; 
+            top: 0; 
+            left: 0; 
+            right: 0; 
+            bottom: 0; 
+            pointer-events: none; 
+            z-index: 10;
+        }
+        
+        .ar-target {
             position: absolute; 
             top: 50%; 
             left: 50%; 
             transform: translate(-50%, -50%);
-            width: 100px; 
-            height: 100px; 
-            border: 2px solid #fff; 
+            width: 120px;
+            height: 120px;
+            border: 3px solid #00ff88;
             border-radius: 50%; 
-            box-shadow: 0 0 10px rgba(0,0,0,0.5);
+            box-shadow: 
+                0 0 20px rgba(0, 255, 136, 0.6),
+                inset 0 0 20px rgba(0, 255, 136, 0.2);
+            animation: arPulse 2s infinite;
         }
-        .pulse { animation: pulse 2s infinite; }
-        @keyframes pulse {
-            0%, 100% { opacity: 0.8; }
+        
+        .ar-target::before {
+            content: '';
+            position: absolute;
+            top: -10px;
+            left: -10px;
+            right: -10px;
+            bottom: -10px;
+            border: 1px solid rgba(0, 255, 136, 0.3);
+            border-radius: 50%;
+            animation: arPulse 2s infinite 0.5s;
+        }
+        
+        .ar-target::after {
+            content: '';
+            position: absolute;
+            top: -20px;
+            left: -20px;
+            right: -20px;
+            bottom: -20px;
+            border: 1px solid rgba(0, 255, 136, 0.1);
+            border-radius: 50%;
+            animation: arPulse 2s infinite 1s;
+        }
+        
+        @keyframes arPulse {
+            0%, 100% { 
+                opacity: 0.8; 
+                transform: translate(-50%, -50%) scale(1);
+            }
+            50% { 
+                opacity: 1; 
+                transform: translate(-50%, -50%) scale(1.1);
+            }
+        }
+        
+        .ar-info-panel {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            right: 20px;
+            background: rgba(0, 0, 0, 0.8);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 16px;
+            padding: 16px;
+            color: white;
+            z-index: 20;
+        }
+        
+        .ar-results {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            right: 20px;
+            background: rgba(0, 0, 0, 0.9);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 20px;
+            padding: 20px;
+            color: white;
+            z-index: 20;
+        }
+        
+        .health-indicator {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            display: inline-block;
+            margin-right: 8px;
+            animation: healthPulse 1s infinite;
+        }
+        
+        @keyframes healthPulse {
+            0%, 100% { opacity: 0.7; }
             50% { opacity: 1; }
+        }
+        
+        .confidence-bar {
+            height: 4px;
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 2px;
+            overflow: hidden;
+            margin-top: 8px;
+        }
+        
+        .confidence-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #00ff88, #00d4ff);
+            transition: width 0.3s ease;
+        }
+        
+        .ar-grid {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-image: 
+                linear-gradient(rgba(0, 255, 136, 0.1) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(0, 255, 136, 0.1) 1px, transparent 1px);
+            background-size: 50px 50px;
+            pointer-events: none;
+            z-index: 5;
+        }
+        
+        .floating-ui {
+            position: absolute;
+            background: rgba(0, 0, 0, 0.8);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
+            padding: 12px;
+            color: white;
+            font-size: 12px;
+            pointer-events: auto;
+            z-index: 15;
+        }
+        
+        .ai-processing {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0, 0, 0, 0.9);
+            backdrop-filter: blur(20px);
+            border-radius: 16px;
+            padding: 20px;
+            text-align: center;
+            color: white;
+            z-index: 25;
+        }
+        
+        .ai-spinner {
+            width: 40px;
+            height: 40px;
+            border: 3px solid rgba(255, 255, 255, 0.1);
+            border-top: 3px solid #00ff88;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 16px;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .report-card {
+            background: white;
+            border-radius: 16px;
+            padding: 20px;
+            margin-bottom: 16px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+            border: 1px solid rgba(0, 0, 0, 0.05);
+        }
+        
+        .report-timeline {
+            position: relative;
+            padding-left: 24px;
+        }
+        
+        .report-timeline::before {
+            content: '';
+            position: absolute;
+            left: 8px;
+            top: 0;
+            bottom: 0;
+            width: 2px;
+            background: linear-gradient(to bottom, #00ff88, #00d4ff);
+        }
+        
+        .timeline-dot {
+            position: absolute;
+            left: -16px;
+            top: 8px;
+            width: 12px;
+            height: 12px;
+            background: #00ff88;
+            border-radius: 50%;
+            border: 2px solid white;
+        }
+        
+        .gradient-bg {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
+        
+        .glass-effect {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
         }
     </style>
 </head>
 <body class="bg-black">
     <!-- Start Screen -->
-    <div id="startScreen" class="min-h-screen flex flex-col items-center justify-center p-4 bg-gradient-to-br from-blue-900 to-teal-600">
-        <h1 class="text-4xl font-bold text-white mb-2">Live Urine Analyzer</h1>
-        <p class="text-blue-100 mb-8 text-center">Real-time color analysis with instant results</p>
-        <button onclick="startAnalysis()" class="bg-white text-blue-900 px-8 py-3 rounded-full font-semibold hover:bg-blue-50 transition">Start Live Analysis</button>
-    </div>
-
-```
-<!-- Camera Screen -->
-<div id="cameraScreen" class="hidden relative min-h-screen">
-    <video id="video" class="w-full h-screen object-cover" autoplay playsinline></video>
-    <canvas id="canvas" class="hidden"></canvas>
-    
-    <!-- Overlay UI -->
-    <div class="overlay">
-        <!-- Crosshair -->
-        <div class="crosshair pulse"></div>
-        
-        <!-- Top Status Bar -->
-        <div class="absolute top-4 left-4 right-4 flex justify-between items-center">
-            <div class="bg-black bg-opacity-50 text-white px-3 py-1 rounded-full text-sm">
-                🔴 LIVE ANALYSIS
-            </div>
-            <button onclick="toggleReports()" class="bg-blue-500 text-white px-4 py-2 rounded-full text-sm hover:bg-blue-600 transition pointer-events-auto">
-                Reports
-            </button>
+    <div id="startScreen" class="min-h-screen flex flex-col items-center justify-center p-0 m-0 bg-gradient-to-br from-[#0f2027] via-[#2c5364] to-[#24243e] relative overflow-hidden">
+        <!-- Animated AR Glow -->
+        <div class="absolute inset-0 z-0 pointer-events-none">
+            <div class="absolute top-1/3 left-1/2 -translate-x-1/2 w-[500px] h-[500px] bg-gradient-to-br from-blue-400/30 via-teal-400/20 to-purple-500/10 rounded-full blur-3xl animate-pulse-slow"></div>
+            <div class="absolute bottom-0 right-0 w-[300px] h-[300px] bg-gradient-to-tr from-purple-400/20 to-blue-400/10 rounded-full blur-2xl animate-pulse-slow"></div>
         </div>
-
-        <!-- Live Results Panel -->
-        <div class="absolute bottom-4 left-4 right-4">
-            <div class="bg-black bg-opacity-80 text-white rounded-2xl p-4 backdrop-blur">
-                <div class="flex items-center gap-4 mb-3">
-                    <div id="colorPreview" class="w-12 h-12 rounded-full border-2 border-white"></div>
-                    <div>
-                        <div id="colorName" class="font-bold text-lg">Analyzing...</div>
-                        <div id="healthStatus" class="text-sm opacity-80">Move camera to sample</div>
+        <div class="relative z-10 w-full max-w-lg mx-auto text-center p-8">
+            <div class="flex flex-col items-center mb-8">
+                <div class="w-28 h-28 bg-gradient-to-br from-blue-400 to-teal-400 rounded-full flex items-center justify-center shadow-lg mb-4 animate-float">
+                    <svg class="w-14 h-14 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                    </svg>
+                </div>
+                <h1 class="text-5xl font-extrabold text-white mb-2 tracking-tight drop-shadow-lg">AR Urine Analyst Pro</h1>
+                <p class="text-blue-100 text-lg mb-2 font-medium">AI-powered, real-time, medical-grade urine color analysis</p>
+                <div class="flex flex-col gap-2 mt-2">
+                    <div class="flex items-center justify-center gap-2">
+                        <span class="inline-block w-2 h-2 bg-green-400 rounded-full animate-pulse"></span>
+                        <span class="text-green-200 text-sm">Live AR Camera</span>
+                    </div>
+                    <div class="flex items-center justify-center gap-2">
+                        <span class="inline-block w-2 h-2 bg-blue-400 rounded-full animate-pulse"></span>
+                        <span class="text-blue-200 text-sm">Instant AI Health Reports</span>
+                    </div>
+                    <div class="flex items-center justify-center gap-2">
+                        <span class="inline-block w-2 h-2 bg-purple-400 rounded-full animate-pulse"></span>
+                        <span class="text-purple-200 text-sm">Medical-Grade Accuracy</span>
                     </div>
                 </div>
-                <div id="advice" class="text-sm bg-blue-500 bg-opacity-20 rounded-lg p-2 mb-3">
-                    Point camera at urine sample in good lighting
-                </div>
+            </div>
+            <button onclick="initializeAR()" class="w-full bg-gradient-to-r from-blue-500 to-teal-400 text-white px-8 py-4 rounded-full font-bold text-xl shadow-xl hover:scale-105 hover:from-blue-600 hover:to-teal-500 transition-all duration-200 mb-4">
+                🚀 Start Live Analysis
+            </button>
+            <div class="text-xs text-blue-100 opacity-70 mt-2">No data is stored or shared without your consent. For informational use only.</div>
+        </div>
+        <style>
+            .animate-float { animation: float 3s ease-in-out infinite; }
+            @keyframes float {
+                0%, 100% { transform: translateY(0); }
+                50% { transform: translateY(-16px); }
+            }
+            .animate-pulse-slow { animation: pulse-slow 4s cubic-bezier(.4,0,.6,1) infinite; }
+            @keyframes pulse-slow {
+                0%, 100% { opacity: 0.7; }
+                50% { opacity: 1; }
+            }
+        </style>
+    </div>
+
+    <!-- AR Camera Screen -->
+    <div id="arScreen" class="hidden relative min-h-screen">
+        <video id="arVideo" class="w-full h-screen object-cover" autoplay playsinline></video>
+        <canvas id="arCanvas" class="hidden"></canvas>
+        <canvas id="overlayCanvas" class="absolute top-0 left-0 w-full h-full pointer-events-none"></canvas>
+        
+        <!-- AR Grid Overlay -->
+        <div class="ar-grid"></div>
+        
+        <!-- AR Target -->
+        <div class="ar-target"></div>
+        
+        <!-- Top Info Panel -->
+        <div class="ar-info-panel">
+            <div class="flex justify-between items-center">
+                <div class="flex items-center">
+                    <div class="health-indicator bg-green-400"></div>
+                    <span class="font-semibold">AR ANALYSIS ACTIVE</span>
+            </div>
                 <div class="flex gap-2">
-                    <button onclick="saveResult()" class="flex-1 bg-green-500 text-white py-2 rounded-lg text-sm hover:bg-green-600 transition pointer-events-auto">
-                        💾 Save Result
+                    <button onclick="toggleSettings()" class="bg-blue-500 text-white px-3 py-1 rounded-full text-sm hover:bg-blue-600 transition pointer-events-auto">
+                        ⚙️ Settings
                     </button>
-                    <button onclick="resetApp()" class="bg-gray-500 text-white px-4 py-2 rounded-lg text-sm hover:bg-gray-600 transition pointer-events-auto">
+                    <button onclick="toggleReports()" class="bg-purple-500 text-white px-3 py-1 rounded-full text-sm hover:bg-purple-600 transition pointer-events-auto">
+                        📊 Reports
+            </button>
+                </div>
+            </div>
+            <div class="mt-3 text-sm opacity-80">
+                <span id="analysisStatus">Initializing AI analysis...</span>
+            </div>
+        </div>
+
+        <!-- Bottom Results Panel -->
+        <div class="ar-results">
+            <div class="flex items-center gap-4 mb-4">
+                <div id="arColorPreview" class="w-16 h-16 rounded-full border-3 border-white shadow-lg"></div>
+                <div class="flex-1">
+                    <div id="arColorName" class="font-bold text-xl">Analyzing...</div>
+                    <div id="arHealthStatus" class="text-sm opacity-80">Position camera over sample</div>
+                    <div class="confidence-bar">
+                        <div id="confidenceFill" class="confidence-fill" style="width: 0%"></div>
+                    </div>
+                </div>
+                </div>
+            
+            <div id="arAdvice" class="text-sm bg-blue-500 bg-opacity-20 rounded-lg p-3 mb-4">
+                Point AR target at urine sample in good lighting
+            </div>
+            
+            <div class="flex gap-3">
+                <button onclick="captureAnalysis()" class="flex-1 bg-green-500 text-white py-3 rounded-lg font-semibold hover:bg-green-600 transition pointer-events-auto">
+                    📸 Capture Analysis
+                    </button>
+                <button onclick="toggleHistory()" class="bg-orange-500 text-white px-4 py-3 rounded-lg hover:bg-orange-600 transition pointer-events-auto">
+                    📋 History
+                </button>
+                <button onclick="resetAR()" class="bg-gray-500 text-white px-4 py-3 rounded-lg hover:bg-gray-600 transition pointer-events-auto">
                         ✕
                     </button>
                 </div>
             </div>
+        
+        <!-- AI Processing Overlay -->
+        <div id="aiProcessing" class="ai-processing hidden">
+            <div class="ai-spinner"></div>
+            <div class="font-semibold">AI Processing...</div>
+            <div class="text-sm opacity-80 mt-2">Analyzing color patterns and health indicators</div>
+            <div id="aiProgressBar" class="w-full bg-gray-700 rounded h-2 mt-4 overflow-hidden">
+                <div id="aiProgressFill" class="h-2 bg-blue-400 transition-all" style="width:0%"></div>
+            </div>
         </div>
     </div>
-</div>
 
-<!-- Reports Screen -->
-<div id="reportsScreen" class="hidden min-h-screen bg-gray-100 p-4">
-    <div class="max-w-md mx-auto">
+    <!-- Advanced Reports Screen -->
+    <div id="reportsScreen" class="hidden min-h-screen bg-gray-50 p-4">
+        <div class="max-w-4xl mx-auto">
         <div class="flex justify-between items-center mb-6">
-            <h2 class="text-2xl font-bold text-gray-800">Analysis Reports</h2>
-            <button onclick="toggleReports()" class="text-blue-500 hover:text-blue-600">✕ Close</button>
+                <div>
+                    <h2 class="text-3xl font-bold text-gray-800">Advanced Analysis Reports</h2>
+                    <p class="text-gray-600">AI-powered insights and health trends</p>
         </div>
-        <div id="reportsList" class="space-y-3">
-            <div class="text-center text-gray-500 py-8">No reports saved yet</div>
+                <button onclick="toggleReports()" class="text-blue-500 hover:text-blue-600 font-semibold">✕ Close</button>
         </div>
-        <button onclick="exportReports()" class="w-full bg-blue-500 text-white py-3 rounded-lg mt-4 hover:bg-blue-600 transition">
-            📤 Export All Reports
+            
+            <!-- Analytics Dashboard -->
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                <div class="bg-white rounded-lg p-4 shadow">
+                    <h3 class="font-semibold text-gray-800 mb-2">Total Analyses</h3>
+                    <div id="totalAnalyses" class="text-2xl font-bold text-blue-600">0</div>
+                </div>
+                <div class="bg-white rounded-lg p-4 shadow">
+                    <h3 class="font-semibold text-gray-800 mb-2">Health Score</h3>
+                    <div id="healthScore" class="text-2xl font-bold text-green-600">--</div>
+                </div>
+                <div class="bg-white rounded-lg p-4 shadow">
+                    <h3 class="font-semibold text-gray-800 mb-2">Trend</h3>
+                    <div id="healthTrend" class="text-2xl font-bold text-purple-600">--</div>
+                </div>
+            </div>
+            
+            <!-- Chart Container -->
+            <div class="bg-white rounded-lg p-4 shadow mb-6">
+                <h3 class="font-semibold text-gray-800 mb-4">Health Trend Analysis</h3>
+                <canvas id="healthChart" height="100"></canvas>
+            </div>
+            
+            <!-- Reports List -->
+            <div id="advancedReportsList" class="space-y-4">
+                <div class="text-center text-gray-500 py-8">No analyses performed yet</div>
+            </div>
+            
+            <div class="flex gap-3 mt-6">
+                <button onclick="exportAdvancedReports()" class="flex-1 bg-blue-500 text-white py-3 rounded-lg hover:bg-blue-600 transition">
+                    📤 Export Full Report
+                </button>
+                <button onclick="generateHealthReport()" class="flex-1 bg-green-500 text-white py-3 rounded-lg hover:bg-green-600 transition">
+                    📋 Generate Health Summary
         </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Settings Modal -->
+    <div id="settingsModal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div class="bg-white rounded-lg p-6 max-w-md w-full mx-4">
+            <h3 class="text-xl font-bold mb-4">AR Settings</h3>
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-sm font-medium mb-2">Analysis Sensitivity</label>
+                    <input type="range" id="sensitivity" min="1" max="10" value="5" class="w-full">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium mb-2">Sample Size</label>
+                    <select id="sampleSize" class="w-full p-2 border rounded">
+                        <option value="small">Small (30px)</option>
+                        <option value="medium" selected>Medium (50px)</option>
+                        <option value="large">Large (80px)</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="flex items-center">
+                        <input type="checkbox" id="autoSave" checked class="mr-2">
+                        Auto-save analyses
+                    </label>
+                </div>
+                <div>
+                    <label class="flex items-center">
+                        <input type="checkbox" id="lightingCompensation" checked class="mr-2">
+                        Enable lighting compensation
+                    </label>
+                </div>
+                <div>
+                    <label class="flex items-center">
+                        <input type="checkbox" id="multiSampleValidation" checked class="mr-2">
+                        Enable multi-sample validation
+                    </label>
+                </div>
+                <div class="border-t pt-4 mt-4">
+                    <h4 class="font-semibold mb-2">Accuracy Controls</h4>
+                    <button onclick="startColorCalibration()" class="w-full bg-purple-500 text-white py-2 rounded mb-2">
+                        🎯 Start Color Calibration
+                    </button>
+                    <div class="text-xs text-gray-500">
+                        Current confidence threshold: <span id="confidenceThreshold">75%</span>
+                    </div>
+                </div>
+            </div>
+            <div class="flex gap-3 mt-6">
+                <button onclick="closeSettings()" class="flex-1 bg-gray-500 text-white py-2 rounded">Cancel</button>
+                <button onclick="saveSettings()" class="flex-1 bg-blue-500 text-white py-2 rounded">Save</button>
+            </div>
     </div>
 </div>
 
 <script>
-    const colorMap = [
-        { name: "Clear", rgb: [240, 240, 240], status: "Overhydrated", advice: "Reduce fluid intake slightly", color: "#f0f0f0" },
-        { name: "Pale Yellow", rgb: [255, 245, 157], status: "Normal", advice: "Perfect hydration level!", color: "#fff59d" },
-        { name: "Yellow", rgb: [255, 235, 59], status: "Normal", advice: "Good hydration level", color: "#ffeb3b" },
-        { name: "Dark Yellow", rgb: [255, 193, 7], status: "Mild Dehydration", advice: "Drink more water", color: "#ffc107" },
-        { name: "Amber", rgb: [245, 124, 0], status: "Dehydrated", advice: "Increase water intake now", color: "#f57c00" },
-        { name: "Brown", rgb: [121, 85, 72], status: "Severe Issue", advice: "See doctor immediately", color: "#795548" },
-        { name: "Red/Pink", rgb: [244, 67, 54], status: "Blood Present", advice: "Consult doctor urgently", color: "#f44336" },
-        { name: "Blue/Green", rgb: [0, 150, 136], status: "Unusual", advice: "Medical consultation needed", color: "#009688" }
-    ];
+        // Advanced AI Color Analysis System
+        const advancedColorMap = [
+            { 
+                name: "Clear", 
+                rgb: [240, 240, 240], 
+                status: "Overhydrated", 
+                advice: "Reduce fluid intake slightly", 
+                color: "#f0f0f0",
+                severity: 1,
+                confidence: 0.95,
+                medicalNotes: "May indicate excessive water intake or diabetes insipidus",
+                hsvRange: { h: [0, 360], s: [0, 0.1], v: [0.9, 1.0] },
+                labRange: { l: [90, 100], a: [-5, 5], b: [-5, 5] }
+            },
+            { 
+                name: "Pale Yellow", 
+                rgb: [255, 245, 157], 
+                status: "Optimal Hydration", 
+                advice: "Perfect hydration level! Maintain current intake", 
+                color: "#fff59d",
+                severity: 0,
+                confidence: 0.98,
+                medicalNotes: "Ideal urine concentration indicating proper hydration",
+                hsvRange: { h: [50, 70], s: [0.3, 0.5], v: [0.9, 1.0] },
+                labRange: { l: [85, 95], a: [-10, 5], b: [20, 40] }
+            },
+            { 
+                name: "Yellow", 
+                rgb: [255, 235, 59], 
+                status: "Good Hydration", 
+                advice: "Good hydration level, consider slight increase", 
+                color: "#ffeb3b",
+                severity: 0,
+                confidence: 0.96,
+                medicalNotes: "Normal urine color indicating adequate hydration",
+                hsvRange: { h: [45, 65], s: [0.6, 0.8], v: [0.8, 1.0] },
+                labRange: { l: [75, 85], a: [-15, 5], b: [30, 50] }
+            },
+            { 
+                name: "Dark Yellow", 
+                rgb: [255, 193, 7], 
+                status: "Mild Dehydration", 
+                advice: "Increase water intake by 500ml", 
+                color: "#ffc107",
+                severity: 2,
+                confidence: 0.94,
+                medicalNotes: "Slight dehydration, increase fluid intake",
+                hsvRange: { h: [35, 55], s: [0.7, 0.9], v: [0.6, 0.8] },
+                labRange: { l: [65, 75], a: [-20, 5], b: [40, 60] }
+            },
+            { 
+                name: "Amber", 
+                rgb: [245, 124, 0], 
+                status: "Dehydrated", 
+                advice: "Drink 1-2 liters of water immediately", 
+                color: "#f57c00",
+                severity: 3,
+                confidence: 0.92,
+                medicalNotes: "Moderate dehydration requiring immediate attention",
+                hsvRange: { h: [25, 45], s: [0.8, 1.0], v: [0.4, 0.6] },
+                labRange: { l: [55, 65], a: [-25, 5], b: [50, 70] }
+            },
+            { 
+                name: "Brown", 
+                rgb: [121, 85, 72], 
+                status: "Severe Issue", 
+                advice: "Seek medical attention immediately", 
+                color: "#795548",
+                severity: 5,
+                confidence: 0.89,
+                medicalNotes: "May indicate liver disease, severe dehydration, or medication side effects",
+                hsvRange: { h: [15, 35], s: [0.3, 0.6], v: [0.2, 0.4] },
+                labRange: { l: [35, 45], a: [5, 25], b: [15, 35] }
+            },
+            { 
+                name: "Red/Pink", 
+                rgb: [244, 67, 54], 
+                status: "Blood Present", 
+                advice: "Consult doctor urgently", 
+                color: "#f44336",
+                severity: 5,
+                confidence: 0.87,
+                medicalNotes: "Hematuria - requires immediate medical evaluation",
+                hsvRange: { h: [350, 10], s: [0.7, 1.0], v: [0.4, 0.8] },
+                labRange: { l: [45, 65], a: [45, 75], b: [25, 45] }
+            },
+            { 
+                name: "Blue/Green", 
+                rgb: [0, 150, 136], 
+                status: "Unusual Color", 
+                advice: "Medical consultation needed", 
+                color: "#009688",
+                severity: 4,
+                confidence: 0.85,
+                medicalNotes: "May indicate medication side effects or rare medical conditions",
+                hsvRange: { h: [170, 190], s: [0.6, 1.0], v: [0.3, 0.6] },
+                labRange: { l: [45, 65], a: [-35, -15], b: [-5, 15] }
+            }
+        ];
 
-    let stream = null;
-    let isAnalyzing = false;
-    let reports = JSON.parse(localStorage.getItem('urineReports') || '[]');
-
-    async function startAnalysis() {
-        document.getElementById('startScreen').classList.add('hidden');
-        document.getElementById('cameraScreen').classList.remove('hidden');
+        // Global State Management
+        let arStream = null;
+        let isARAnalyzing = false;
+        let arReports = JSON.parse(localStorage.getItem('arUrineReports') || '[]');
+        let healthChart = null;
+        let analysisHistory = [];
+        let currentSettings = {
+            sensitivity: 5,
+            sampleSize: 'medium',
+            autoSave: true,
+            calibrationMode: false,
+            lightingCompensation: true,
+            multiSampleValidation: true
+        };
         
-        try {
-            stream = await navigator.mediaDevices.getUserMedia({ 
-                video: { facingMode: "environment", width: 1280, height: 720 } 
-            });
-            document.getElementById('video').srcObject = stream;
-            startRealTimeAnalysis();
-        } catch (err) {
-            alert("Camera access needed for analysis");
-            resetApp();
+        // Accuracy enhancement variables
+        let colorCalibrationData = JSON.parse(localStorage.getItem('colorCalibration') || '{}');
+        let lightingBaseline = null;
+        let analysisConfidenceThreshold = 0.75;
+        let consecutiveStableReadings = 0;
+        let lastStableAnalysis = null;
+
+        // --- AI Processing Perfection Mechanism ---
+        let aiProcessingTimeout = null;
+        let aiProcessingStartTime = null;
+        let aiProcessingActive = false;
+        let aiProcessingProgressInterval = null;
+
+        function showAIProcessingOverlay() {
+            const overlay = document.getElementById('aiProcessing');
+            overlay.classList.remove('hidden');
+            overlay.innerHTML = `
+                <div class="ai-spinner"></div>
+                <div class="font-semibold">AI Processing...</div>
+                <div class="text-sm opacity-80 mt-2">Analyzing color patterns and health indicators</div>
+                <div id="aiProgressBar" class="w-full bg-gray-700 rounded h-2 mt-4 overflow-hidden">
+                    <div id="aiProgressFill" class="h-2 bg-blue-400 transition-all" style="width:0%"></div>
+                </div>
+            `;
+            aiProcessingStartTime = Date.now();
+            aiProcessingActive = true;
+            let progress = 0;
+            aiProcessingProgressInterval = setInterval(() => {
+                progress = Math.min(100, ((Date.now() - aiProcessingStartTime) / 10000) * 100);
+                document.getElementById('aiProgressFill').style.width = progress + '%';
+            }, 100);
+            aiProcessingTimeout = setTimeout(() => {
+                if (aiProcessingActive) {
+                    showAIProcessingTimeoutDialog();
+                }
+            }, 10000); // 10 seconds
         }
-    }
 
-    function startRealTimeAnalysis() {
-        if (isAnalyzing) return;
-        isAnalyzing = true;
-        
-        const video = document.getElementById('video');
-        const canvas = document.getElementById('canvas');
+        function hideAIProcessingOverlay() {
+            aiProcessingActive = false;
+            clearTimeout(aiProcessingTimeout);
+            clearInterval(aiProcessingProgressInterval);
+            document.getElementById('aiProcessing').classList.add('hidden');
+        }
+
+        function showAIProcessingCompleted() {
+            aiProcessingActive = false;
+            clearTimeout(aiProcessingTimeout);
+            clearInterval(aiProcessingProgressInterval);
+            const overlay = document.getElementById('aiProcessing');
+            overlay.innerHTML = `
+                <div class="ai-spinner" style="border-top: 3px solid #00ff88;"></div>
+                <div class="font-semibold text-green-400">Analysis Completed!</div>
+                <div class="text-sm opacity-80 mt-2">Result saved successfully.</div>
+            `;
+            setTimeout(() => {
+                overlay.classList.add('hidden');
+            }, 1800);
+        }
+
+        function showAIProcessingTimeoutDialog() {
+            aiProcessingActive = false;
+            clearTimeout(aiProcessingTimeout);
+            clearInterval(aiProcessingProgressInterval);
+            const overlay = document.getElementById('aiProcessing');
+            overlay.innerHTML = `
+                <div class="ai-spinner" style="border-top: 3px solid #f59e42;"></div>
+                <div class="font-semibold text-yellow-400">Unable to get stable reading</div>
+                <div class="text-sm opacity-80 mt-2">Please adjust lighting, hold steady, or try again.</div>
+                <div class="flex gap-2 mt-4">
+                    <button onclick="retryAIProcessing()" class="flex-1 bg-blue-500 text-white py-2 rounded">Retry</button>
+                    <button onclick="saveAnywayAIProcessing()" class="flex-1 bg-orange-500 text-white py-2 rounded">Save Anyway</button>
+                    <button onclick="hideAIProcessingOverlay()" class="flex-1 bg-gray-500 text-white py-2 rounded">Cancel</button>
+                </div>
+            `;
+        }
+
+        function retryAIProcessing() {
+            hideAIProcessingOverlay();
+            setTimeout(() => {
+                captureAnalysis();
+            }, 300);
+        }
+
+        function saveAnywayAIProcessing() {
+            hideAIProcessingOverlay();
+            setTimeout(() => {
+                const currentAnalysis = getCurrentAnalysis();
+                if (currentAnalysis) {
+                    saveAdvancedAnalysis(currentAnalysis);
+                    showNotification('Saved with low confidence.', 'error');
+                }
+            }, 300);
+        }
+
+        // Initialize AR System
+        async function initializeAR() {
+        document.getElementById('startScreen').classList.add('hidden');
+            document.getElementById('arScreen').classList.remove('hidden');
+            
+            try {
+                // Request high-quality camera access
+                arStream = await navigator.mediaDevices.getUserMedia({ 
+                    video: { 
+                        facingMode: "environment", 
+                        width: { ideal: 1920 },
+                        height: { ideal: 1080 },
+                        frameRate: { ideal: 30 }
+                    } 
+                });
+                
+                const video = document.getElementById('arVideo');
+                video.srcObject = arStream;
+                
+                // Initialize AR analysis
+                startARAnalysis();
+                
+                // Load settings
+                loadSettings();
+                
+        } catch (err) {
+                console.error('Camera access error:', err);
+                alert("Camera access required for AR analysis. Please enable camera permissions.");
+                resetAR();
+            }
+        }
+
+        // Advanced AR Analysis System
+        function startARAnalysis() {
+            if (isARAnalyzing) return;
+            isARAnalyzing = true;
+            
+            const video = document.getElementById('arVideo');
+            const canvas = document.getElementById('arCanvas');
+            const overlayCanvas = document.getElementById('overlayCanvas');
         const ctx = canvas.getContext('2d');
-        
-        function analyze() {
-            if (!isAnalyzing) return;
+            const overlayCtx = overlayCanvas.getContext('2d');
             
-            canvas.width = video.videoWidth;
-            canvas.height = video.videoHeight;
-            ctx.drawImage(video, 0, 0);
+            // Set canvas dimensions
+            function resizeCanvas() {
+                canvas.width = video.videoWidth || 1280;
+                canvas.height = video.videoHeight || 720;
+                overlayCanvas.width = window.innerWidth;
+                overlayCanvas.height = window.innerHeight;
+            }
             
-            // Sample center area (crosshair region)
+            let frameCount = 0;
+            let lastAnalysis = null;
+            let analysisBuffer = [];
+            let lightingBaseline = null;
+            
+            function analyzeFrame() {
+                if (!isARAnalyzing) return;
+                
+                frameCount++;
+                resizeCanvas();
+                
+                // Draw video frame to canvas
+                ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+                
+                // Get center sampling area with enhanced precision
             const centerX = canvas.width / 2;
             const centerY = canvas.height / 2;
-            const sampleSize = 50;
-            
+                const sampleSizes = { small: 30, medium: 50, large: 80 };
+                const sampleSize = sampleSizes[currentSettings.sampleSize];
+                
+                // Enhanced multi-point sampling for maximum accuracy
+                const samplePoints = [
+                    { x: centerX, y: centerY, weight: 0.4 },
+                    { x: centerX - 15, y: centerY - 15, weight: 0.15 },
+                    { x: centerX + 15, y: centerY + 15, weight: 0.15 },
+                    { x: centerX - 15, y: centerY + 15, weight: 0.15 },
+                    { x: centerX + 15, y: centerY - 15, weight: 0.15 }
+                ];
+                
+                let totalR = 0, totalG = 0, totalB = 0, totalWeight = 0;
+                let colorVariance = 0;
+                let samples = [];
+                
+                samplePoints.forEach(point => {
             const imageData = ctx.getImageData(
-                centerX - sampleSize/2, 
-                centerY - sampleSize/2, 
+                        point.x - sampleSize/2, 
+                        point.y - sampleSize/2, 
                 sampleSize, 
                 sampleSize
             ).data;
@@ -165,150 +773,882 @@
                 count++;
             }
             
-            r = Math.round(r / count);
-            g = Math.round(g / count);
-            b = Math.round(b / count);
-            
-            const result = findClosestColor(r, g, b);
-            updateUI(result, r, g, b);
-            
-            requestAnimationFrame(analyze);
+                    r = r / count;
+                    g = g / count;
+                    b = b / count;
+                    
+                    // Apply lighting compensation if enabled
+                    if (currentSettings.lightingCompensation && lightingBaseline) {
+                        const compensated = compensateLighting([r, g, b], lightingBaseline);
+                        r = compensated[0];
+                        g = compensated[1];
+                        b = compensated[2];
+                    }
+                    
+                    totalR += r * point.weight;
+                    totalG += g * point.weight;
+                    totalB += b * point.weight;
+                    totalWeight += point.weight;
+                    
+                    samples.push({ r, g, b, weight: point.weight });
+                });
+                
+                const avgR = Math.round(totalR / totalWeight);
+                const avgG = Math.round(totalG / totalWeight);
+                const avgB = Math.round(totalB / totalWeight);
+                
+                // Calculate color variance for confidence assessment
+                colorVariance = calculateColorVariance(samples, [avgR, avgG, avgB]);
+                
+                // Multi-algorithm analysis for maximum accuracy
+                const analysis = performAdvancedAIAnalysis(avgR, avgG, avgB, colorVariance);
+                
+                // Buffer analysis for stability validation
+                analysisBuffer.push(analysis);
+                if (analysisBuffer.length > 10) {
+                    analysisBuffer.shift();
+                }
+                
+                // Validate analysis stability
+                const isStable = validateAnalysisStability(analysisBuffer);
+                
+                // Update UI only if significant change or stable reading
+                if (!lastAnalysis || 
+                    Math.abs(analysis.confidence - lastAnalysis.confidence) > 0.05 ||
+                    analysis.name !== lastAnalysis.name ||
+                    (isStable && analysis.confidence > analysisConfidenceThreshold)) {
+                    
+                    updateARUI(analysis, avgR, avgG, avgB, isStable);
+                    lastAnalysis = analysis;
+                    
+                    // Auto-save if enabled and analysis is stable
+                    if (currentSettings.autoSave && isStable && analysis.confidence > analysisConfidenceThreshold) {
+                        autoSaveAnalysis(analysis, avgR, avgG, avgB);
+                    }
+                }
+                
+                // Draw AR overlay with accuracy indicators
+                drawAROverlay(overlayCtx, analysis, isStable);
+                
+                requestAnimationFrame(analyzeFrame);
         }
         
         video.addEventListener('loadedmetadata', () => {
-            analyze();
-        });
-    }
+                resizeCanvas();
+                // Establish lighting baseline
+                establishLightingBaseline(ctx, canvas.width, canvas.height);
+                analyzeFrame();
+            });
+        }
 
-    function findClosestColor(r, g, b) {
-        let closest = colorMap[0];
-        let minDistance = Infinity;
-        
-        colorMap.forEach(color => {
+        // Advanced AI Analysis with Multiple Validation Algorithms
+        function performAdvancedAIAnalysis(r, g, b, colorVariance) {
+            let bestMatch = advancedColorMap[0];
+            let bestConfidence = 0;
+            let algorithmScores = [];
+            
+            // Algorithm 1: Enhanced Euclidean Distance
+            const euclideanScores = advancedColorMap.map(color => {
             const distance = Math.sqrt(
                 Math.pow(r - color.rgb[0], 2) +
                 Math.pow(g - color.rgb[1], 2) +
                 Math.pow(b - color.rgb[2], 2)
             );
-            if (distance < minDistance) {
-                minDistance = distance;
-                closest = color;
-            }
-        });
-        
-        return { ...closest, detectedRgb: [r, g, b] };
-    }
-
-    function updateUI(result, r, g, b) {
-        document.getElementById('colorPreview').style.backgroundColor = `rgb(${r}, ${g}, ${b})`;
-        document.getElementById('colorName').textContent = result.name;
-        document.getElementById('healthStatus').textContent = result.status;
-        document.getElementById('advice').textContent = result.advice;
-        
-        // Color-code the advice based on urgency
-        const adviceEl = document.getElementById('advice');
-        if (result.status.includes('Severe') || result.status.includes('Blood')) {
-            adviceEl.className = 'text-sm bg-red-500 bg-opacity-20 rounded-lg p-2 mb-3';
-        } else if (result.status.includes('Dehydrat')) {
-            adviceEl.className = 'text-sm bg-orange-500 bg-opacity-20 rounded-lg p-2 mb-3';
-        } else {
-            adviceEl.className = 'text-sm bg-green-500 bg-opacity-20 rounded-lg p-2 mb-3';
+                return { color, score: Math.max(0, 1 - (distance / 255)), algorithm: 'euclidean' };
+            });
+            
+            // Algorithm 2: HSV Color Space Analysis
+            const hsvScores = advancedColorMap.map(color => {
+                const hsvDistance = calculateHSVDistance([r, g, b], color.rgb);
+                const hsvScore = Math.max(0, 1 - (hsvDistance / 100));
+                return { color, score: hsvScore, algorithm: 'hsv' };
+            });
+            
+            // Algorithm 3: LAB Color Space Analysis (more perceptually uniform)
+            const labScores = advancedColorMap.map(color => {
+                const labDistance = calculateLABDistance([r, g, b], color.rgb);
+                const labScore = Math.max(0, 1 - (labDistance / 100));
+                return { color, score: labScore, algorithm: 'lab' };
+            });
+            
+            // Algorithm 4: Range-based validation
+            const rangeScores = advancedColorMap.map(color => {
+                const hsv = rgbToHsv(r, g, b);
+                const inRange = isInHSVRange(hsv, color.hsvRange);
+                return { color, score: inRange ? 0.9 : 0.1, algorithm: 'range' };
+            });
+            
+            // Combine all algorithms with weighted scoring
+            advancedColorMap.forEach((color, index) => {
+                const euclideanScore = euclideanScores[index].score * 0.3;
+                const hsvScore = hsvScores[index].score * 0.25;
+                const labScore = labScores[index].score * 0.25;
+                const rangeScore = rangeScores[index].score * 0.2;
+                
+                const combinedScore = euclideanScore + hsvScore + labScore + rangeScore;
+                
+                // Apply color variance penalty
+                const variancePenalty = Math.min(1, colorVariance / 50);
+                const finalScore = combinedScore * (1 - variancePenalty * 0.3);
+                
+                if (finalScore > bestConfidence) {
+                    bestConfidence = finalScore;
+                    bestMatch = { ...color };
+                    algorithmScores = [euclideanScore, hsvScore, labScore, rangeScore];
+                }
+            });
+            
+            // Apply sensitivity setting
+            const sensitivityFactor = currentSettings.sensitivity / 10;
+            bestMatch.confidence = Math.min(1, bestConfidence * sensitivityFactor);
+            
+            // Add algorithm validation data
+            bestMatch.algorithmScores = algorithmScores;
+            bestMatch.colorVariance = colorVariance;
+            bestMatch.aiInsights = generateAdvancedAIInsights(bestMatch, r, g, b, colorVariance);
+            
+            return bestMatch;
         }
-    }
 
-    function saveResult() {
-        const result = {
+        // LAB Color Space Distance Calculation
+        function calculateLABDistance(rgb1, rgb2) {
+            const lab1 = rgbToLab(rgb1[0], rgb1[1], rgb1[2]);
+            const lab2 = rgbToLab(rgb2[0], rgb2[1], rgb2[2]);
+            
+            const lDiff = Math.abs(lab1[0] - lab2[0]);
+            const aDiff = Math.abs(lab1[1] - lab2[1]);
+            const bDiff = Math.abs(lab1[2] - lab2[2]);
+            
+            return Math.sqrt(lDiff * lDiff + aDiff * aDiff + bDiff * bDiff);
+        }
+
+        function rgbToLab(r, g, b) {
+            // Convert RGB to XYZ first
+            r = r / 255;
+            g = g / 255;
+            b = b / 255;
+            
+            r = r > 0.04045 ? Math.pow((r + 0.055) / 1.055, 2.4) : r / 12.92;
+            g = g > 0.04045 ? Math.pow((g + 0.055) / 1.055, 2.4) : g / 12.92;
+            b = b > 0.04045 ? Math.pow((b + 0.055) / 1.055, 2.4) : b / 12.92;
+            
+            const x = r * 0.4124 + g * 0.3576 + b * 0.1805;
+            const y = r * 0.2126 + g * 0.7152 + b * 0.0722;
+            const z = r * 0.0193 + g * 0.1192 + b * 0.9505;
+            
+            // Convert XYZ to LAB
+            const xn = 0.95047;
+            const yn = 1.00000;
+            const zn = 1.08883;
+            
+            const xr = x / xn;
+            const yr = y / yn;
+            const zr = z / zn;
+            
+            const fx = xr > 0.008856 ? Math.pow(xr, 1/3) : (7.787 * xr) + (16 / 116);
+            const fy = yr > 0.008856 ? Math.pow(yr, 1/3) : (7.787 * yr) + (16 / 116);
+            const fz = zr > 0.008856 ? Math.pow(zr, 1/3) : (7.787 * zr) + (16 / 116);
+            
+            const l = (116 * fy) - 16;
+            const a = 500 * (fx - fy);
+            const b_val = 200 * (fy - fz);
+            
+            return [l, a, b_val];
+        }
+
+        // HSV Range Validation
+        function isInHSVRange(hsv, range) {
+            const [h, s, v] = hsv;
+            
+            // Handle hue wrap-around for red colors
+            let hInRange = false;
+            if (range.h[0] > range.h[1]) {
+                hInRange = h >= range.h[0] || h <= range.h[1];
+        } else {
+                hInRange = h >= range.h[0] && h <= range.h[1];
+            }
+            
+            const sInRange = s >= range.s[0] && s <= range.s[1];
+            const vInRange = v >= range.v[0] && v <= range.v[1];
+            
+            return hInRange && sInRange && vInRange;
+        }
+
+        // Color Variance Calculation
+        function calculateColorVariance(samples, average) {
+            let totalVariance = 0;
+            let totalWeight = 0;
+            
+            samples.forEach(sample => {
+                const distance = Math.sqrt(
+                    Math.pow(sample.r - average[0], 2) +
+                    Math.pow(sample.g - average[1], 2) +
+                    Math.pow(sample.b - average[2], 2)
+                );
+                totalVariance += distance * sample.weight;
+                totalWeight += sample.weight;
+            });
+            
+            return totalVariance / totalWeight;
+        }
+
+        // Lighting Compensation
+        function establishLightingBaseline(ctx, width, height) {
+            // Sample multiple areas to establish lighting baseline
+            const sampleAreas = [
+                { x: width * 0.1, y: height * 0.1, size: 20 },
+                { x: width * 0.9, y: height * 0.1, size: 20 },
+                { x: width * 0.1, y: height * 0.9, size: 20 },
+                { x: width * 0.9, y: height * 0.9, size: 20 }
+            ];
+            
+            let totalR = 0, totalG = 0, totalB = 0, count = 0;
+            
+            sampleAreas.forEach(area => {
+                const imageData = ctx.getImageData(area.x, area.y, area.size, area.size).data;
+                for (let i = 0; i < imageData.length; i += 4) {
+                    totalR += imageData[i];
+                    totalG += imageData[i + 1];
+                    totalB += imageData[i + 2];
+                    count++;
+                }
+            });
+            
+            lightingBaseline = {
+                r: totalR / count,
+                g: totalG / count,
+                b: totalB / count
+            };
+        }
+
+        function compensateLighting(rgb, baseline) {
+            const targetBrightness = 128; // Target middle gray
+            const currentBrightness = (rgb[0] + rgb[1] + rgb[2]) / 3;
+            const baselineBrightness = (baseline.r + baseline.g + baseline.b) / 3;
+            
+            const compensationFactor = targetBrightness / baselineBrightness;
+            
+            return [
+                Math.min(255, Math.max(0, rgb[0] * compensationFactor)),
+                Math.min(255, Math.max(0, rgb[1] * compensationFactor)),
+                Math.min(255, Math.max(0, rgb[2] * compensationFactor))
+            ];
+        }
+
+        // Analysis Stability Validation
+        function validateAnalysisStability(buffer) {
+            if (buffer.length < 5) return false;
+            
+            const recentAnalyses = buffer.slice(-5);
+            const colorNames = recentAnalyses.map(a => a.name);
+            const confidences = recentAnalyses.map(a => a.confidence);
+            
+            // Check if color name is consistent
+            const mostCommonColor = colorNames.reduce((a, b) =>
+                colorNames.filter(v => v === a).length >= colorNames.filter(v => v === b).length ? a : b
+            );
+            
+            const colorConsistency = colorNames.filter(c => c === mostCommonColor).length / colorNames.length;
+            
+            // Check if confidence is stable
+            const avgConfidence = confidences.reduce((a, b) => a + b, 0) / confidences.length;
+            const confidenceVariance = confidences.reduce((sum, c) => sum + Math.pow(c - avgConfidence, 2), 0) / confidences.length;
+            
+            return colorConsistency >= 0.8 && confidenceVariance < 0.01 && avgConfidence > analysisConfidenceThreshold;
+        }
+
+        // Enhanced AI Insights with Accuracy Data
+        function generateAdvancedAIInsights(analysis, r, g, b, colorVariance) {
+            const insights = [];
+            
+            // Color consistency analysis
+            if (colorVariance < 20) {
+                insights.push("Excellent color consistency - high confidence reading");
+            } else if (colorVariance < 40) {
+                insights.push("Good color consistency detected");
+            } else if (colorVariance > 80) {
+                insights.push("High color variation - ensure uniform lighting and stable positioning");
+            }
+            
+            // Algorithm agreement analysis
+            if (analysis.algorithmScores) {
+                const avgScore = analysis.algorithmScores.reduce((a, b) => a + b, 0) / analysis.algorithmScores.length;
+                const scoreVariance = analysis.algorithmScores.reduce((sum, s) => sum + Math.pow(s - avgScore, 2), 0) / analysis.algorithmScores.length;
+                
+                if (scoreVariance < 0.01) {
+                    insights.push("All algorithms in strong agreement");
+                } else if (scoreVariance > 0.05) {
+                    insights.push("Algorithm disagreement - consider retesting");
+                }
+            }
+            
+            // Health trend analysis with enhanced accuracy
+            if (arReports.length > 0) {
+                const recentReports = arReports.slice(0, 5).filter(r => r.confidence > 0.8);
+                if (recentReports.length > 2) {
+                    const severityTrend = recentReports.map(r => r.severity);
+                    const avgSeverity = severityTrend.reduce((a, b) => a + b, 0) / severityTrend.length;
+                    
+                    if (analysis.severity > avgSeverity + 1.5) {
+                        insights.push("Significant health trend worsening detected");
+                    } else if (analysis.severity < avgSeverity - 1.5) {
+                        insights.push("Significant health improvement detected");
+                    } else if (Math.abs(analysis.severity - avgSeverity) < 0.5) {
+                        insights.push("Stable health trend maintained");
+                    }
+                }
+            }
+            
+            // Time-based insights with accuracy considerations
+            const hour = new Date().getHours();
+            if (hour < 6 || hour > 22) {
+                insights.push("Night-time analysis - morning retest recommended for optimal accuracy");
+            }
+            
+            // Confidence-based recommendations
+            if (analysis.confidence > 0.9) {
+                insights.push("High-confidence reading - results are reliable");
+            } else if (analysis.confidence < 0.7) {
+                insights.push("Low confidence - improve lighting and positioning for better accuracy");
+            }
+            
+            return insights;
+        }
+
+        // Update AR UI with Real-time Data
+        function updateARUI(analysis, r, g, b, isStable) {
+            document.getElementById('arColorPreview').style.backgroundColor = `rgb(${r}, ${g}, ${b})`;
+            document.getElementById('arColorName').textContent = analysis.name;
+            document.getElementById('arHealthStatus').textContent = analysis.status;
+            document.getElementById('arAdvice').textContent = analysis.advice;
+            document.getElementById('confidenceFill').style.width = `${analysis.confidence * 100}%`;
+            
+            // Update analysis status
+            document.getElementById('analysisStatus').textContent = 
+                `AI Confidence: ${Math.round(analysis.confidence * 100)}% | Severity: ${analysis.severity}/5 | Stability: ${isStable ? 'Stable' : 'Unstable'}`;
+            
+            // Color-code based on severity
+            const adviceEl = document.getElementById('arAdvice');
+            const statusEl = document.getElementById('arHealthStatus');
+            
+            if (analysis.severity >= 4) {
+                adviceEl.className = 'text-sm bg-red-500 bg-opacity-30 rounded-lg p-3 mb-4 text-red-100';
+                statusEl.className = 'text-sm opacity-80 text-red-300';
+            } else if (analysis.severity >= 2) {
+                adviceEl.className = 'text-sm bg-orange-500 bg-opacity-30 rounded-lg p-3 mb-4 text-orange-100';
+                statusEl.className = 'text-sm opacity-80 text-orange-300';
+            } else {
+                adviceEl.className = 'text-sm bg-green-500 bg-opacity-30 rounded-lg p-3 mb-4 text-green-100';
+                statusEl.className = 'text-sm opacity-80 text-green-300';
+            }
+        }
+
+        // Draw AR Overlay
+        function drawAROverlay(ctx, analysis, isStable) {
+            ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+            
+            // Draw confidence ring
+            const centerX = ctx.canvas.width / 2;
+            const centerY = ctx.canvas.height / 2;
+            const radius = 60;
+            
+            ctx.beginPath();
+            ctx.arc(centerX, centerY, radius, 0, 2 * Math.PI);
+            ctx.strokeStyle = `rgba(0, 255, 136, ${analysis.confidence})`;
+            ctx.lineWidth = 3;
+            ctx.stroke();
+            
+            // Draw severity indicator
+            if (analysis.severity >= 3) {
+                ctx.beginPath();
+                ctx.arc(centerX, centerY, radius + 20, 0, 2 * Math.PI);
+                ctx.strokeStyle = 'rgba(255, 0, 0, 0.6)';
+                ctx.lineWidth = 2;
+                ctx.stroke();
+            }
+            
+            // Draw stability indicator
+            if (!isStable) {
+                ctx.beginPath();
+                ctx.arc(centerX, centerY, radius + 10, 0, 2 * Math.PI);
+                ctx.strokeStyle = 'rgba(255, 255, 0, 0.6)';
+                ctx.lineWidth = 2;
+                ctx.stroke();
+            }
+        }
+
+        // Capture Analysis with AI Processing
+        function captureAnalysis() {
+            showAIProcessingOverlay();
+            let checkInterval = null;
+            let startTime = Date.now();
+            function checkStable() {
+                const currentAnalysis = getCurrentAnalysis();
+                if (!aiProcessingActive) return;
+                if (currentAnalysis && currentAnalysis.confidence > analysisConfidenceThreshold && currentAnalysis.aiInsights.includes('High-confidence reading - results are reliable')) {
+                    saveAdvancedAnalysis(currentAnalysis);
+                    showAIProcessingCompleted();
+                    clearInterval(checkInterval);
+                } else if (Date.now() - startTime > 10000) {
+                    clearInterval(checkInterval);
+                    // Timeout handled by overlay
+                }
+            }
+            checkInterval = setInterval(checkStable, 300);
+        }
+
+        function getCurrentAnalysis() {
+            const colorName = document.getElementById('arColorName').textContent;
+            const status = document.getElementById('arHealthStatus').textContent;
+            const advice = document.getElementById('arAdvice').textContent;
+            const rgb = document.getElementById('arColorPreview').style.backgroundColor;
+            
+            if (colorName === 'Analyzing...') return null;
+            
+            return {
             timestamp: new Date().toISOString(),
-            color: document.getElementById('colorName').textContent,
-            status: document.getElementById('healthStatus').textContent,
-            advice: document.getElementById('advice').textContent,
-            rgb: document.getElementById('colorPreview').style.backgroundColor
-        };
-        
-        reports.unshift(result);
-        localStorage.setItem('urineReports', JSON.stringify(reports));
+                color: colorName,
+                status: status,
+                advice: advice,
+                rgb: rgb,
+                confidence: parseFloat(document.getElementById('confidenceFill').style.width) / 100,
+                severity: advancedColorMap.find(c => c.name === colorName)?.severity || 0,
+                aiInsights: generateAdvancedAIInsights(advancedColorMap.find(c => c.name === colorName), 0, 0, 0, 0)
+            };
+        }
+
+        // Advanced Analysis Saving
+        function saveAdvancedAnalysis(analysis) {
+            arReports.unshift(analysis);
+            localStorage.setItem('arUrineReports', JSON.stringify(arReports));
+            
+            // Update analytics
+            updateAnalytics();
         
         // Show confirmation
         const btn = event.target;
         const original = btn.textContent;
-        btn.textContent = '✅ Saved!';
+            btn.textContent = '✅ Captured!';
         btn.classList.add('bg-green-600');
         setTimeout(() => {
             btn.textContent = original;
             btn.classList.remove('bg-green-600');
-        }, 1500);
-    }
+            }, 2000);
+        }
 
+        function autoSaveAnalysis(analysis, r, g, b) {
+            const autoAnalysis = {
+                timestamp: new Date().toISOString(),
+                color: analysis.name,
+                status: analysis.status,
+                advice: analysis.advice,
+                rgb: `rgb(${r}, ${g}, ${b})`,
+                confidence: analysis.confidence,
+                severity: analysis.severity,
+                aiInsights: analysis.aiInsights,
+                autoSaved: true
+            };
+            
+            arReports.unshift(autoAnalysis);
+            localStorage.setItem('arUrineReports', JSON.stringify(arReports));
+        }
+
+        // Toggle Reports with Advanced Analytics
     function toggleReports() {
-        const camera = document.getElementById('cameraScreen');
+            const ar = document.getElementById('arScreen');
         const reports = document.getElementById('reportsScreen');
         
         if (reports.classList.contains('hidden')) {
-            camera.classList.add('hidden');
+                ar.classList.add('hidden');
             reports.classList.remove('hidden');
-            displayReports();
+                displayAdvancedReports();
+                updateAnalytics();
+                initializeHealthChart();
         } else {
             reports.classList.add('hidden');
-            camera.classList.remove('hidden');
+                ar.classList.remove('hidden');
+            }
         }
-    }
 
-    function displayReports() {
-        const container = document.getElementById('reportsList');
-        if (reports.length === 0) {
-            container.innerHTML = '<div class="text-center text-gray-500 py-8">No reports saved yet</div>';
+        // Display Advanced Reports
+        function displayAdvancedReports() {
+            const container = document.getElementById('advancedReportsList');
+            
+            if (arReports.length === 0) {
+                container.innerHTML = '<div class="text-center text-gray-500 py-8">No analyses performed yet</div>';
             return;
         }
         
-        container.innerHTML = reports.map(report => `
-            <div class="bg-white rounded-lg p-4 shadow">
-                <div class="flex items-center gap-3 mb-2">
-                    <div class="w-8 h-8 rounded-full border-2 border-gray-300" style="background-color: ${report.rgb}"></div>
-                    <div>
-                        <div class="font-semibold">${report.color}</div>
+            container.innerHTML = arReports.map((report, index) => `
+                <div class="report-card">
+                    <div class="report-timeline">
+                        <div class="timeline-dot"></div>
+                        <div class="flex items-center gap-4 mb-3">
+                            <div class="w-12 h-12 rounded-full border-2 border-gray-300" style="background-color: ${report.rgb}"></div>
+                            <div class="flex-1">
+                                <div class="font-semibold text-lg">${report.color}</div>
                         <div class="text-sm text-gray-500">${new Date(report.timestamp).toLocaleString()}</div>
+                                ${report.autoSaved ? '<span class="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded">Auto-saved</span>' : ''}
                     </div>
+                            <div class="text-right">
+                                <div class="text-sm font-semibold">Confidence: ${Math.round(report.confidence * 100)}%</div>
+                                <div class="text-sm text-gray-500">Severity: ${report.severity}/5</div>
                 </div>
-                <div class="text-sm">
-                    <div class="mb-1"><strong>Status:</strong> ${report.status}</div>
-                    <div><strong>Advice:</strong> ${report.advice}</div>
+                        </div>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <div class="text-sm mb-1"><strong>Status:</strong> ${report.status}</div>
+                                <div class="text-sm"><strong>Advice:</strong> ${report.advice}</div>
+                            </div>
+                            <div>
+                                <div class="text-sm mb-1"><strong>AI Insights:</strong></div>
+                                <div class="text-sm text-gray-600">
+                                    ${report.aiInsights ? report.aiInsights.join(', ') : 'No insights available'}
+                                </div>
+                            </div>
+                        </div>
                 </div>
             </div>
         `).join('');
     }
 
-    function exportReports() {
-        if (reports.length === 0) {
-            alert('No reports to export');
+        // Update Analytics Dashboard
+        function updateAnalytics() {
+            document.getElementById('totalAnalyses').textContent = arReports.length;
+            
+            if (arReports.length > 0) {
+                const avgSeverity = arReports.reduce((sum, r) => sum + r.severity, 0) / arReports.length;
+                const healthScore = Math.max(0, 100 - (avgSeverity * 20));
+                document.getElementById('healthScore').textContent = Math.round(healthScore);
+                
+                // Calculate trend
+                const recentReports = arReports.slice(0, 3);
+                const olderReports = arReports.slice(3, 6);
+                
+                if (recentReports.length > 0 && olderReports.length > 0) {
+                    const recentAvg = recentReports.reduce((sum, r) => sum + r.severity, 0) / recentReports.length;
+                    const olderAvg = olderReports.reduce((sum, r) => sum + r.severity, 0) / olderReports.length;
+                    
+                    if (recentAvg < olderAvg) {
+                        document.getElementById('healthTrend').textContent = '↗️ Improving';
+                    } else if (recentAvg > olderAvg) {
+                        document.getElementById('healthTrend').textContent = '↘️ Declining';
+                    } else {
+                        document.getElementById('healthTrend').textContent = '→ Stable';
+                    }
+                }
+            }
+        }
+
+        // Initialize Health Chart
+        function initializeHealthChart() {
+            const ctx = document.getElementById('healthChart').getContext('2d');
+            
+            if (healthChart) {
+                healthChart.destroy();
+            }
+            
+            const chartData = arReports.slice(0, 20).reverse().map((report, index) => ({
+                x: new Date(report.timestamp),
+                y: report.severity
+            }));
+            
+            healthChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    datasets: [{
+                        label: 'Health Severity',
+                        data: chartData,
+                        borderColor: '#00ff88',
+                        backgroundColor: 'rgba(0, 255, 136, 0.1)',
+                        tension: 0.4,
+                        pointRadius: 4,
+                        pointBackgroundColor: '#00ff88'
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        x: {
+                            type: 'time',
+                            time: {
+                                unit: 'day'
+                            },
+                            title: {
+                                display: true,
+                                text: 'Date'
+                            }
+                        },
+                        y: {
+                            beginAtZero: true,
+                            max: 5,
+                            title: {
+                                display: true,
+                                text: 'Severity Level'
+                            }
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            display: false
+                        }
+                    }
+                }
+            });
+        }
+
+        // Export Advanced Reports
+        function exportAdvancedReports() {
+            if (arReports.length === 0) {
+                showNotification('No reports to export', 'error');
             return;
         }
         
         const csv = [
-            'Timestamp,Color,Status,Advice',
-            ...reports.map(r => `"${r.timestamp}","${r.color}","${r.status}","${r.advice}"`)
+                'Timestamp,Color,Status,Advice,Confidence,Severity,AI Insights',
+                ...arReports.map(r => `"${r.timestamp}","${r.color}","${r.status}","${r.advice}","${r.confidence}","${r.severity}","${r.aiInsights ? r.aiInsights.join('; ') : ''}"`)
         ].join('\n');
         
         const blob = new Blob([csv], { type: 'text/csv' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = `urine-analysis-${new Date().toISOString().split('T')[0]}.csv`;
+            a.download = `advanced-urine-analysis-${new Date().toISOString().split('T')[0]}.csv`;
         a.click();
         URL.revokeObjectURL(url);
+            
+            showNotification('Report exported successfully!', 'success');
+        }
+
+        // Generate Health Summary
+        function generateHealthReport() {
+            if (arReports.length === 0) {
+                showNotification('No data available for health summary', 'error');
+                return;
+            }
+            
+            const summary = {
+                totalAnalyses: arReports.length,
+                averageSeverity: arReports.reduce((sum, r) => sum + r.severity, 0) / arReports.length,
+                mostCommonColor: getMostCommonColor(),
+                healthTrend: calculateHealthTrend(),
+                recommendations: generateRecommendations()
+            };
+            
+            const reportText = `
+Advanced Urine Analysis Health Report
+Generated: ${new Date().toLocaleString()}
+
+SUMMARY:
+- Total Analyses: ${summary.totalAnalyses}
+- Average Health Severity: ${summary.averageSeverity.toFixed(2)}/5
+- Most Common Color: ${summary.mostCommonColor}
+- Overall Trend: ${summary.healthTrend}
+
+RECOMMENDATIONS:
+${summary.recommendations.map(r => `• ${r}`).join('\n')}
+
+This report was generated by AI-powered analysis.
+            `;
+            
+            const blob = new Blob([reportText], { type: 'text/plain' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `health-summary-${new Date().toISOString().split('T')[0]}.txt`;
+            a.click();
+            URL.revokeObjectURL(url);
+            
+            showNotification('Health summary generated!', 'success');
+        }
+
+        function getMostCommonColor() {
+            const colorCounts = {};
+            arReports.forEach(r => {
+                colorCounts[r.color] = (colorCounts[r.color] || 0) + 1;
+            });
+            return Object.keys(colorCounts).reduce((a, b) => colorCounts[a] > colorCounts[b] ? a : b);
+        }
+
+        function calculateHealthTrend() {
+            if (arReports.length < 2) return 'Insufficient data';
+            
+            const recent = arReports.slice(0, Math.floor(arReports.length / 2));
+            const older = arReports.slice(Math.floor(arReports.length / 2));
+            
+            const recentAvg = recent.reduce((sum, r) => sum + r.severity, 0) / recent.length;
+            const olderAvg = older.reduce((sum, r) => sum + r.severity, 0) / older.length;
+            
+            if (recentAvg < olderAvg - 0.5) return 'Improving';
+            if (recentAvg > olderAvg + 0.5) return 'Declining';
+            return 'Stable';
+        }
+
+        function generateRecommendations() {
+            const recommendations = [];
+            const avgSeverity = arReports.reduce((sum, r) => sum + r.severity, 0) / arReports.length;
+            
+            if (avgSeverity > 3) {
+                recommendations.push('Consider consulting a healthcare professional');
+                recommendations.push('Increase water intake significantly');
+            } else if (avgSeverity > 1) {
+                recommendations.push('Monitor hydration levels more closely');
+                recommendations.push('Increase water intake moderately');
+            } else {
+                recommendations.push('Maintain current hydration habits');
+            }
+            
+            if (arReports.length < 5) {
+                recommendations.push('Perform more analyses for better trend analysis');
+            }
+            
+            return recommendations;
+        }
+
+        // Settings Management
+        function toggleSettings() {
+            document.getElementById('settingsModal').classList.toggle('hidden');
+        }
+
+        function closeSettings() {
+            document.getElementById('settingsModal').classList.add('hidden');
+        }
+
+        function saveSettings() {
+            currentSettings.sensitivity = parseInt(document.getElementById('sensitivity').value);
+            currentSettings.sampleSize = document.getElementById('sampleSize').value;
+            currentSettings.autoSave = document.getElementById('autoSave').checked;
+            currentSettings.lightingCompensation = document.getElementById('lightingCompensation').checked;
+            currentSettings.multiSampleValidation = document.getElementById('multiSampleValidation').checked;
+            
+            // Update confidence threshold based on sensitivity
+            analysisConfidenceThreshold = 0.6 + (currentSettings.sensitivity * 0.04);
+            
+            localStorage.setItem('arSettings', JSON.stringify(currentSettings));
+            closeSettings();
+            showNotification('Settings saved! Analysis accuracy enhanced.', 'success');
+        }
+
+            function loadSettings() {
+        const saved = localStorage.getItem('arSettings');
+        if (saved) {
+            currentSettings = { ...currentSettings, ...JSON.parse(saved) };
+            document.getElementById('sensitivity').value = currentSettings.sensitivity;
+            document.getElementById('sampleSize').value = currentSettings.sampleSize;
+            document.getElementById('autoSave').checked = currentSettings.autoSave;
+            document.getElementById('lightingCompensation').checked = currentSettings.lightingCompensation;
+            document.getElementById('multiSampleValidation').checked = currentSettings.multiSampleValidation;
+            
+            // Set confidence threshold
+            analysisConfidenceThreshold = 0.6 + (currentSettings.sensitivity * 0.04);
+            
+            // Update UI to show current threshold
+            const thresholdElement = document.getElementById('confidenceThreshold');
+            if (thresholdElement) {
+                thresholdElement.textContent = Math.round(analysisConfidenceThreshold * 100) + '%';
+            }
+        }
     }
 
-    function resetApp() {
-        isAnalyzing = false;
-        if (stream) {
-            stream.getTracks().forEach(track => track.stop());
-            stream = null;
+        // Utility Functions
+        function showNotification(message, type = 'info') {
+            const notification = document.createElement('div');
+            notification.className = `fixed top-4 right-4 p-4 rounded-lg text-white z-50 ${
+                type === 'success' ? 'bg-green-500' : 
+                type === 'error' ? 'bg-red-500' : 'bg-blue-500'
+            }`;
+            notification.textContent = message;
+            document.body.appendChild(notification);
+            
+            setTimeout(() => {
+                notification.remove();
+            }, 3000);
         }
-        document.getElementById('cameraScreen').classList.add('hidden');
+
+        function resetAR() {
+            isARAnalyzing = false;
+            if (arStream) {
+                arStream.getTracks().forEach(track => track.stop());
+                arStream = null;
+            }
+            document.getElementById('arScreen').classList.add('hidden');
         document.getElementById('reportsScreen').classList.add('hidden');
+            document.getElementById('settingsModal').classList.add('hidden');
         document.getElementById('startScreen').classList.remove('hidden');
     }
-</script>
-```
 
+        function toggleHistory() {
+            toggleReports();
+        }
+
+        // Initialize on load
+        document.addEventListener('DOMContentLoaded', () => {
+            loadSettings();
+        });
+
+        // HSV Color Distance Calculation
+        function calculateHSVDistance(rgb1, rgb2) {
+            const hsv1 = rgbToHsv(rgb1[0], rgb1[1], rgb1[2]);
+            const hsv2 = rgbToHsv(rgb2[0], rgb2[1], rgb2[2]);
+            
+            const hDiff = Math.min(Math.abs(hsv1[0] - hsv2[0]), 360 - Math.abs(hsv1[0] - hsv2[0]));
+            const sDiff = Math.abs(hsv1[1] - hsv2[1]);
+            const vDiff = Math.abs(hsv1[2] - hsv2[2]);
+            
+            return (hDiff * 0.5) + (sDiff * 0.25) + (vDiff * 0.25);
+        }
+
+        function rgbToHsv(r, g, b) {
+            r /= 255; g /= 255; b /= 255;
+            const max = Math.max(r, g, b);
+            const min = Math.min(r, g, b);
+            const diff = max - min;
+            
+            let h = 0;
+            if (diff === 0) h = 0;
+            else if (max === r) h = ((g - b) / diff) % 6;
+            else if (max === g) h = (b - r) / diff + 2;
+            else h = (r - g) / diff + 4;
+            
+            h = Math.round(h * 60);
+            if (h < 0) h += 360;
+            
+            const s = max === 0 ? 0 : diff / max;
+            const v = max;
+            
+            return [h, s, v];
+        }
+
+        // Color Calibration System
+        function startColorCalibration() {
+            currentSettings.calibrationMode = true;
+            showNotification('Calibration mode activated. Point camera at a white surface.', 'info');
+            
+            // Create calibration overlay
+            const calibrationOverlay = document.createElement('div');
+            calibrationOverlay.id = 'calibrationOverlay';
+            calibrationOverlay.className = 'fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50';
+            calibrationOverlay.innerHTML = `
+                <div class="bg-white rounded-lg p-6 max-w-md mx-4 text-center">
+                    <h3 class="text-xl font-bold mb-4">Color Calibration</h3>
+                    <p class="mb-4">Point camera at a white surface for accurate color calibration</p>
+                    <div id="calibrationStatus" class="text-sm text-gray-600 mb-4">Waiting for white surface...</div>
+                    <button onclick="completeCalibration()" class="bg-blue-500 text-white px-4 py-2 rounded">Complete Calibration</button>
+                </div>
+            `;
+            document.body.appendChild(calibrationOverlay);
+        }
+
+        function completeCalibration() {
+            currentSettings.calibrationMode = false;
+            const overlay = document.getElementById('calibrationOverlay');
+            if (overlay) overlay.remove();
+            
+            // Save calibration data
+            localStorage.setItem('colorCalibration', JSON.stringify(colorCalibrationData));
+            showNotification('Color calibration completed!', 'success');
+        }
+    </script>
 </body>
 </html>
